@@ -1,0 +1,26 @@
+# Xcode / Swift
+.build/
+*.o
+*.d
+*.swp
+*.xcuserdata
+*.xcworkspace/xcuserdata/
+DerivedData/
+.DS_Store
+
+# Swift Package Manager
+.swiftpm/xcode/
+Package.resolved
+
+# VLCKit symlink (created by run.sh at runtime)
+*.framework
+
+# Logs
+*.log
+
+# Claude Code
+.claude/settings.local.json
+
+# IDE
+.vscode/
+*.xcodeproj/xcuserdata/
