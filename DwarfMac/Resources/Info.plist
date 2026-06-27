@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>DwarfMac nutzt Bluetooth, um das Teleskop erstmalig mit dem WLAN zu konfigurieren.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>DwarfMac benötigt den Standort für die Teleskop-Kalibrierung und GoTo-Funktion.</string>
 </dict>

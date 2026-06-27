@@ -4,6 +4,10 @@ import SwiftUI
 /// Erweiterbar: weitere Sections für künftige Einstellungen ergänzen.
 struct SettingsView: View {
     @AppStorage("deviceIP")          private var deviceIP          = DwarfEndpoint.defaultIP
+
+    @State private var discovery    = DeviceDiscovery()
+    @State private var discovering  = false
+    @State private var showBLESetup = false
     @AppStorage("observerLat")       private var observerLat       = 0.0
     @AppStorage("observerLon")       private var observerLon       = 0.0
     @AppStorage("gamepadDeadzone")   private var gamepadDeadzone   = 0.15
@@ -12,11 +16,42 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Verbindung") {
-                TextField("Geräte-IP", text: $deviceIP)
-                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    TextField("Geräte-IP", text: $deviceIP)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        if discovering {
+                            discovery.stop()
+                            discovering = false
+                        } else {
+                            discovering = true
+                            discovery.onFound = { ip in
+                                deviceIP = ip
+                                discovering = false
+                            }
+                            discovery.start()
+                        }
+                    } label: {
+                        if discovering {
+                            Label("Suche läuft…", systemImage: "stop.circle")
+                        } else {
+                            Label("Suchen", systemImage: "magnifyingglass")
+                        }
+                    }
+                    .help("Dwarf-Gerät im Netz per UDP-Broadcast suchen")
+                }
                 Text("Änderungen werden beim nächsten Verbindungsaufbau wirksam.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Button {
+                    showBLESetup = true
+                } label: {
+                    Label("BLE-Einrichtung…", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .help("Teleskop erstmalig per Bluetooth mit dem WLAN verbinden")
+                .sheet(isPresented: $showBLESetup) {
+                    BLESetupView(deviceIP: $deviceIP)
+                }
             }
             Section("Beobachter-Standort") {
                 LabeledContent("Breitengrad") {
