@@ -63,6 +63,35 @@ enum DwarfCommands {
         return WsPacket(module: .taskCenter, cmd: .enterCamera, data: p.data).encode()
     }
 
+    /// Preview-Pipeline der Telekamera aktivieren. ReqSetPreviewQuality { uint32
+    /// level=1; uint32 quality=2 }. Ohne das produziert das Gerät für eine Kamera
+    /// KEINE RTP-Frames — die RTSP-Session verbindet, liefert aber kein Bild (VLC
+    /// läuft in Buffering → Error). Die App sendet das nach `enterCamera` für beide
+    /// Kameras (PCAP-verifiziert 2026-06-27).
+    static func teleSetPreviewQuality(level: UInt32 = 1, quality: UInt32 = 0) -> Data {
+        var p = ProtoWriter()
+        if level > 0 { p.uint32(1, level) }      // proto3: 0 weglassen
+        if quality > 0 { p.uint32(2, quality) }
+        return WsPacket(module: .cameraTele, cmd: .cameraTeleSetPreviewQuality, data: p.data).encode()
+    }
+
+    /// Preview-Pipeline der Weitwinkelkamera aktivieren (sonst bleibt ch1 ohne Bild).
+    static func wideSetPreviewQuality(level: UInt32 = 1, quality: UInt32 = 0) -> Data {
+        var p = ProtoWriter()
+        if level > 0 { p.uint32(1, level) }
+        if quality > 0 { p.uint32(2, quality) }
+        return WsPacket(module: .cameraWide, cmd: .cameraWideSetPreviewQuality, data: p.data).encode()
+    }
+
+    /// Kamera-/Stream-Betrieb aufsetzen wie die Handy-App: `enterCamera` plus
+    /// Preview-Quality für BEIDE Kameras, damit Tele (ch0) UND Weitwinkel (ch1)
+    /// tatsächlich Frames liefern. Reihenfolge beibehalten.
+    static func startCameraStreams() -> [Data] {
+        [enterCamera(),
+         teleSetPreviewQuality(level: 1),
+         wideSetPreviewQuality(level: 1)]
+    }
+
     /// Master-/Kontroll-Lock übernehmen. `ReqsetMasterLock { bool lock=1 }`.
     /// Nötig, damit der DWARF mini Steuerbefehle (Parameter etc.) annimmt.
     static func setMaster(_ lock: Bool = true) -> Data {
@@ -94,6 +123,50 @@ enum DwarfCommands {
         var p = ProtoWriter()
         p.int32(1, mode)
         return WsPacket(module: .taskCenter, cmd: .switchShootingMode, data: p.data).encode()
+    }
+
+    /// Shooting-Technik wählen (Task-Center, cmd 16403). Bei Foto-Modi sendet die
+    /// App das direkt nach `switchShootingMode`. ReqSwitchShootingTech { int32 tech=1 }.
+    static func switchShootingTech(_ tech: Int32) -> Data {
+        var p = ProtoWriter()
+        p.int32(1, tech)
+        return WsPacket(module: .taskCenter, cmd: .switchShootingTech, data: p.data).encode()
+    }
+
+    /// Astro-Belichtungszeit abfragen (cmd 11039). Bei Astro-Modi sendet die App das
+    /// nach dem Moduswechsel. Feldwerte PCAP-verifiziert (protocol.md §18a):
+    /// f1=f4=-1 (uint64-max), f2=f3=100, f6=Mode-ID.
+    static func astroGetShootingTime(mode: Int32) -> Data {
+        var p = ProtoWriter()
+        p.uint64(1, .max)
+        p.uint64(2, 100)
+        p.uint64(3, 100)
+        p.uint64(4, .max)
+        p.int32(6, mode)
+        return WsPacket(module: .astro, cmd: .astroGetShootingTime, data: p.data).encode()
+    }
+
+    /// Moduswechsel-Transaktion wie die Handy-App (protocol.md §18a):
+    /// `SWITCH_SHOOTING_MODE` plus bei Astro-Modi (Milchstraße/Sternspuren) die
+    /// Astro-Belichtungszeit-Query. Die Shooting-*Technik* (cmd 16403) hängt am
+    /// Aufnahme-Typ, NICHT am Szene-Modus — dafür `switchShootingTech(_:)` separat
+    /// senden (siehe `shootingTech(for:)`). Reihenfolge beibehalten.
+    static func observingMode(_ mode: ObservingMode) -> [Data] {
+        var packets = [switchShootingMode(mode.deviceMode)]
+        if mode.isAstroMode {
+            packets.append(astroGetShootingTime(mode: mode.deviceMode))
+        }
+        // Der Moduswechsel setzt die Preview-Pipelines zurück → erneut aktivieren,
+        // sonst liefern die Streams (v. a. Wide) nach dem Wechsel keine Frames mehr.
+        packets.append(teleSetPreviewQuality(level: 1))
+        packets.append(wideSetPreviewQuality(level: 1))
+        return packets
+    }
+
+    /// Shooting-Technik passend zum Aufnahme-Typ setzen (cmd 16403). Muss vor der
+    /// jeweiligen Aufnahme gesendet werden — Serienfoto (BURST) wird sonst abgelehnt.
+    static func shootingTech(for type: CaptureType) -> Data {
+        switchShootingTech(type.shootingTech)
     }
 
     // MARK: - Telekamera: Aufnahme

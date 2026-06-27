@@ -4,6 +4,12 @@ Gesammelte Erkenntnisse aus PCAP-Analyse, Dekompilierung der Android-App und
 praktischen Tests am DWARF mini (2026-06-25/26). Gilt für Firmware-Generation
 DWARF mini / Dwarf 3; ältere DWARF-II-Firmware weicht teilweise ab.
 
+**Externe Protokoll-Quellen (verlässlich):**
+- https://github.com/aeinstein/dwarfii_api (Branch `apiV2`) — `src/proto/*.proto`, `src/*.js`.
+- https://github.com/alikh31/dwarflab-sdk — TypeScript-SDK mit vollständigen Protobuf-Defs,
+  310+ Befehlen über 12 Module, 38 typisierten Notify-Events und BLE-Setup
+  (`proto/`, `packages/sdk/src/generated/`, `docs/`).
+
 ---
 
 ## 1. Transport
@@ -504,6 +510,91 @@ Relevante Notify-Pakete, die die App auswertet:
 | 15212 | Tracking-Status |
 | 15273–15276 | Foto-/Burst-/Video-/Zeitraffer-Status (OperationState) |
 | 15288 | Langzeitbelichtungs-Fortschritt (function_id, total_time, exposured_time) |
+
+---
+
+## 18a. Beobachtungs-Modus umschalten (Allgemein/DeepSky/…)
+
+PCAP-verifiziert 2026-06-27. Ein Moduswechsel in der Handy-App ist **kein einzelner
+Befehl**, sondern eine Transaktion über das **Task-Center-Modul (Ordinal 14)**:
+
+| cmd | Name | Payload | Zweck |
+|-----|------|---------|-------|
+| **16402** | `CMD_..._SWITCH_SHOOTING_MODE` | `{ int32 mode = 1 }` | eigentlicher Moduswechsel |
+| **16403** | `CMD_..._SWITCH_SHOOTING_TECH` | `{ int32 tech = 1 }` | „Shooting-Technik" (Unter-Einstellung der Foto-Modi) |
+| **11039** | `CMD_ASTRO_GET_ASTRO_SHOOTING_TIME` | `{ f1=-1, f2=100, f3=100, f4=-1, f6=<mode> }` | Astro-Belichtungszeit abfragen (nur Astro-Modi) |
+
+Bestätigung vom Gerät: Notify **15267** (`NOTIFY_SWITCH_SHOOTING_MODE`, Feld 3 = neuer
+Modus) bzw. Notify **15269/15271** (Tele-/Wide-Shooting-Tech-State).
+
+**Mode-IDs (= App-Menü-Reihenfolge, 1-basiert; den Klartext-Enum gibt es nur in der
+App, nicht im apiV2-Proto):**
+
+| Mode-ID | App-Label | Begleitbefehle beim Wechsel |
+|---------|-----------|------------------------------|
+| 1 | Allgemein | `switchShootingTech` (16403) |
+| 2 | DeepSky | `switchShootingTech` (16403) |
+| 3 | Sonnensystem | (nicht erfasst) |
+| 4 | Milchstraße | `astro 11039` + Vorschau-Qualität (`cameraTele 10050`, `cameraWide 12036`) |
+| 5 | Sternspuren | `astro 11039` (Astro-Zeit-Query) |
+| 9 | „Foto/Normal" (Startwert, **nicht** in der Beobachtungsliste) | — |
+
+Muster: **Foto-Modi (1/2)** lösen `SWITCH_SHOOTING_TECH` aus, **Astro-Modi (4/5)**
+fragen mit `GET_ASTRO_SHOOTING_TIME` (Modus in Feld 6) die Belichtungszeit ab und
+setzen die Vorschau-Qualität. Nach dem Connect stand das Gerät auf **mode 9**.
+`getDeviceStateInfo` (16405) listet pro Bildparameter, in welchen Modi er gültig ist
+(z. B. Param 1 → {1,3,4,5}, Param 3 → {2,3,4,5}).
+
+> **Achtung — Szene-Mode-IDs ≠ SDK-`ShootingMode`-Enum.** Das dwarflab-sdk definiert
+> `ShootingMode { PHOTO=0, VIDEO=1, ASTRO=2, PANORAMA=3 }` — das passt NICHT zu den
+> hier per PCAP gemessenen Szene-IDs (1,2,4,5,9), die der DWARF mini für die App-
+> Beobachtungsmodi verwendet. Die obige Tabelle (PCAP-Ground-Truth) ist maßgeblich.
+
+**`cmd 10050` = `CAMERA_TELE_SET_PREVIEW_QUALITY`, `cmd 12036` = `CAMERA_WIDE_SET_PREVIEW_QUALITY`**
+(`ReqSetPreviewQuality { uint32 level=1; uint32 quality=2 }`; Quelle: dwarflab-sdk `commands.ts`).
+
+> **Preview-Quality aktiviert die RTP-Frame-Produktion — Pflicht für den 2. Stream
+> (PCAP+Log-verifiziert 2026-06-27).** Die DwarfMini bedient ch0 (Tele) UND ch1 (Wide)
+> per RTSP gleichzeitig (App: `PLAY ch0`+`PLAY ch1` → beide `200 OK`). ABER: Für eine
+> Kamera liefert das Gerät nur dann tatsächlich Videoframes, wenn deren Preview-Pipeline
+> via `SET_PREVIEW_QUALITY` aktiviert wurde. Ohne das verbindet die RTSP-Session zwar
+> (SETUP/PLAY ok), bekommt aber keine Daten → VLC hängt in Buffering und wirft nach ~1s
+> `error` (Endlos-Reconnect). Symptom: Tele läuft (Default-aktiv), **Wide nie**. Die App
+> sendet nach `enterCamera` Preview-Quality für BEIDE Kameras. DwarfMac repliziert das in
+> `DwarfCommands.startCameraStreams()` (enterCamera + tele/wide Preview-Quality level=1),
+> aufgerufen beim Connect und im „Kameras→Starten"-Button.
+
+**Milchstraße & Sternspuren sind reine Weitwinkel-Modi — Gerät schaltet Tele ab.**
+In diesen beiden Modi bedient das Gerät den Tele-Stream (`ch0/stream0`) NICHT mehr.
+Versucht der Client den Tele-Stream weiter anzuzeigen, wirkt er „nicht ansprechbar"
+und Reconnects laufen ins Leere — fälschlich als „Stream kaputt, Teleskop-Neustart
+nötig" interpretiert. DwarfMac schaltet Tele dort über `ObservingMode.teleActive`
+inaktiv (url=nil → Player stoppt, ausgeblendet) und zeigt nur Weitwinkel groß.
+
+**Moduswechsel stellt den RTSP-Stream um → Client muss neu verbinden.** Ein Wechsel
+(v. a. Allgemein↔Astro) ändert geräteseitig den Stream; das Gerät meldet das per Notify
+**15234 `NOTIFY_STREAM_TYPE`** (`StreamType { stream_type=1; cam_id=2 }`, cam_id 0=Tele,
+1=Wide). Verbindet der Client den RTSP-Stream danach nicht neu (frisches
+DESCRIBE/SETUP/PLAY), bleibt der alte Stream „hängen" und wirkt nicht mehr ansprechbar.
+DwarfMac zählt deshalb pro Kamera einen Reload-Token hoch (`DeviceState.teleStreamReload`/
+`wideStreamReload`), den `RTSPPlayerView` beobachtet und bei Änderung neu verbindet — nur
+bei echtem Stream-Typ-Wechsel (Dedupe gegen Reconnect-Thrash). `cam_id` 0=Tele, 1=Wide
+(dwarflab-sdk `docs/modules.md`).
+
+PCAP-verifiziert (Zurückschalten Sternspuren→Allgemein, 2026-06-27): Beim Wechsel ändert
+**Weitwinkel** seinen Stream-Typ (`notifyStreamType f1=2 f2=1` in Astro, `f1=1 f2=1` zurück)
+→ Client muss Wide neu verbinden. **Tele** (cam_id 0) wird ohne Notify gestoppt → über
+`teleActive` modusabhängig behandeln. Das **Zurückschalten** sendet nur
+`switchShootingMode` + `switchShootingTech` (kein `enterCamera`/Preview-Quality/Kamera-
+Öffnen) — das Gerät reaktiviert Tele selbst.
+
+**Shooting-Technik (cmd 16403, `ReqSwitchShootingTech { int32 tech=1 }`)** gehört zum
+**Aufnahme-Typ**, nicht zum Szene-Modus. SDK-Enum `ShootingTech`:
+`SINGLE_SHOT=1, STACKING=2, BURST=3, VIDEO=4, TIMELAPSE=5, PANORAMA=6`. **Muss vor der
+Aufnahme gesetzt werden** — Serienfoto (`startBurst` 10003/12023) wird sonst mit
+`code:-1 PARSE_PROTOBUF_ERROR` abgelehnt. (Live-Stacking 11005 funktioniert ohne
+expliziten Tech-Switch.) Bestätigung: `ResSwitchShootingTech { shooting_tech_id=2 }`
+bzw. Notify 15269/15271.
 
 ---
 

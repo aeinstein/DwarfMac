@@ -99,6 +99,7 @@ enum DwarfCmd: UInt32 {
     case cameraWideSetWBMode = 12018     // 0=Farbtemperatur, 1=Szene
     case cameraWideSetWBCT = 12020       // Farbtemperatur-Index
     case cameraWideSetWBScene = 12035
+    case cameraWideSetPreviewQuality = 12036 // ReqSetPreviewQuality { uint32 level=1; uint32 quality=2 } — aktiviert die Wide-Preview-Pipeline (sonst keine RTP-Frames → ch1-Stream tot)
 
     // Weitwinkel: Aufnahme
     case cameraWidePhotograph = 12022
@@ -132,6 +133,7 @@ enum DwarfCmd: UInt32 {
     case cameraTeleSetWBScene = 10027
     case cameraTeleSetWBCT = 10029      // Farbtemperatur-Index
     case cameraTeleSetIRCut = 10031     // 0=CUT (IR-Sperre), 1=PASS
+    case cameraTeleSetPreviewQuality = 10050 // ReqSetPreviewQuality { uint32 level=1; uint32 quality=2 } — aktiviert die Tele-Preview-Pipeline (sonst keine RTP-Frames)
     case cameraTeleSetAllParams = 10035 // ReqSetAllParams { exp_mode…sharpness, jpg_quality } (Sammelbefehl)
     case cameraTeleGetAllParams = 10036 // ResGetAllParams { repeated CommonParam all_params=1; code=2 }
     case cameraTeleSetFeatureParam = 10037  // CMD_CAMERA_TELE_SET_FEATURE_PARAM (ReqSetFeatureParams{CommonParam})
@@ -150,6 +152,7 @@ enum DwarfCmd: UInt32 {
     case astroStopLiveStacking = 11006
     case astroGoLive = 11010          // CMD_ASTRO_GO_LIVE: Tele-Kamera zurück auf Live-Stream
     case astroStackingList = 11040    // C→D leer = Anfrage; D→C field[2] repeated = Preset-Liste
+    case astroGetShootingTime = 11039 // CMD_ASTRO_GET_ASTRO_SHOOTING_TIME (Astro-Modi beim Moduswechsel)
 
     // Fokus (MODULE_FOCUS)
     case focusAutoFocus = 15000          // ReqNormalAutoFocus { mode, center_x, center_y }
@@ -193,6 +196,7 @@ enum DwarfCmd: UInt32 {
     case startTask = 16400            // CMD_GLOBAL_TASK_MANAGER_START_TASK
     case stopTask = 16401             // CMD_GLOBAL_TASK_MANAGER_STOP_TASK
     case switchShootingMode = 16402   // CMD_GLOBAL_TASK_MANAGER_SWITCH_SHOOTING_MODE
+    case switchShootingTech = 16403   // CMD_GLOBAL_TASK_MANAGER_SWITCH_SHOOTING_TECH (Foto-Modi)
     case enterCamera = 16404          // CMD_GLOBAL_TASK_MANAGER_ENTER_CAMERA
     case getDeviceStateInfo = 16405   // CMD_GLOBAL_TASK_GET_DEVICE_STATE_INFO (liefert Param-Liste mit echten ids)
 

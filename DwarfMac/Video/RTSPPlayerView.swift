@@ -11,6 +11,9 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
     private(set) var status: Status = .idle
     private(set) var errorMessage: String?
 
+    /// Kamera-Bezeichnung fürs Logging (z. B. „Teleobjektiv"/„Weitwinkel").
+    @ObservationIgnored var label = "?"
+
     @ObservationIgnored let videoView = VLCVideoView()
     @ObservationIgnored private let player = VLCMediaPlayer()
 
@@ -27,6 +30,7 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
     }
 
     func start(url: URL) {
+        Log.line("[RTSP \(label)] start \(url.absoluteString)")
         retryTask?.cancel()
         currentURL = url
         retryCount = 0
@@ -34,6 +38,7 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
     }
 
     func stop() {
+        Log.line("[RTSP \(label)] stop")
         retryTask?.cancel()
         currentURL = nil
         player.stop()
@@ -43,6 +48,7 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
 
     /// Startet die VLC-Wiedergabe (ohne den Retry-Zähler zurückzusetzen).
     private func play(url: URL) {
+        Log.line("[RTSP \(label)] play (connecting) \(url.absoluteString)")
         status = .connecting
         let media = VLCMedia(url: url)
         // RTSP über TCP (stabiler als UDP) und kurze Pufferzeit für Live-Bild.
@@ -65,6 +71,7 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
 
         let exponent = min(retryCount - 1, 4)        // 2^0 … 2^4, dann Deckel
         let delay = min(UInt64(1) << exponent, 10) * 1_000_000_000
+        Log.line("[RTSP \(label)] scheduleRestart #\(retryCount) in \(delay / 1_000_000_000)s — \(reason)")
         retryTask?.cancel()
         retryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: delay)
@@ -76,6 +83,7 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
     nonisolated func mediaPlayerStateChanged(_ aNotification: Notification) {
         // VLCKit ruft den Delegate auf dem Main-Thread auf.
         MainActor.assumeIsolated {
+            Log.line("[RTSP \(label)] VLC-State → \(Self.stateName(player.state)) (status=\(status))")
             switch player.state {
             case .error:
                 scheduleRestart(reason: "RTSP-Wiedergabefehler")
@@ -95,6 +103,19 @@ final class RTSPPlayer: NSObject, VLCMediaPlayerDelegate {
             }
         }
     }
+
+    private static func stateName(_ s: VLCMediaPlayerState) -> String {
+        switch s {
+        case .stopped: "stopped"
+        case .opening: "opening"
+        case .buffering: "buffering"
+        case .ended: "ended"
+        case .error: "error"
+        case .playing: "playing"
+        case .paused: "paused"
+        @unknown default: "unknown(\(s.rawValue))"
+        }
+    }
 }
 
 /// Bettet die VLC-`VLCVideoView` in SwiftUI ein.
@@ -110,6 +131,9 @@ struct RTSPPlayerView: View {
     /// RTSP-URL; bei `nil` wird nichts abgespielt.
     var url: URL?
     var compact: Bool = false
+    /// Erzwingt einen Reconnect (fresh DESCRIBE/SETUP/PLAY), wenn der Wert sich
+    /// ändert — das Gerät hat den Stream umgestellt (z. B. nach Moduswechsel).
+    var reloadToken: Int = 0
 
     @State private var player = RTSPPlayer()
 
@@ -132,6 +156,7 @@ struct RTSPPlayerView: View {
         .onAppear { restart(url) }
         .onDisappear { player.stop() }
         .onChange(of: url) { _, newURL in restart(newURL) }
+        .onChange(of: reloadToken) { _, _ in restart(url) }
     }
 
     private var titleBadge: some View {
@@ -188,6 +213,7 @@ struct RTSPPlayerView: View {
     }
 
     private func restart(_ url: URL?) {
+        player.label = title
         if let url { player.start(url: url) } else { player.stop() }
     }
 }

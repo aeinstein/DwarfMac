@@ -91,7 +91,8 @@ struct CameraControlBar: View {
     // MARK: – Kamera-Befehle
 
     private func startCameras() {
-        send(DwarfCommands.enterCamera())
+        // enterCamera + Preview-Quality für beide Kameras (sonst kein Wide-Bild).
+        DwarfCommands.startCameraStreams().forEach(send)
         send(DwarfCommands.getTeleAllParams())
         send(DwarfCommands.getTeleAllFeatureParams())
     }

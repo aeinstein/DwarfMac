@@ -49,6 +49,30 @@ struct MediaItem: Identifiable, Decodable {
         let mb = Double(fileSize) / 1_048_576
         return mb >= 1 ? String(format: "%.1f MB", mb) : String(format: "%.0f KB", Double(fileSize) / 1024)
     }
+
+    /// Sinnvoller Dateiname für den Download: echte Endung aus `filePath`,
+    /// Zeitstempel angehängt damit "Normal_Photo" o. ä. eindeutig wird.
+    var suggestedFileName: String {
+        // Endung möglichst aus dem echten Pfad, sonst aus dem Anzeigenamen.
+        let pathExt = (filePath as NSString).pathExtension
+        let nameExt = (fileName as NSString).pathExtension
+        let ext = !pathExt.isEmpty ? pathExt : nameExt
+
+        // Basisname ohne (evtl. vorhandene) Endung.
+        var base = (fileName as NSString).deletingPathExtension
+        if base.isEmpty { base = "DwarfMedia" }
+
+        let stamp = Self.stampFormatter.string(from: date)
+        let name = "\(base)_\(stamp)"
+        return ext.isEmpty ? name : "\(name).\(ext)"
+    }
+
+    private static let stampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        return f
+    }()
 }
 
 struct MediaCount: Decodable {

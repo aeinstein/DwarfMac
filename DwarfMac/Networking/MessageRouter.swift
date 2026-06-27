@@ -97,11 +97,13 @@ final class MessageRouter {
         let res = (width != nil && height != nil) ? "\(width!)×\(height!)" : nil
         if wide {
             deviceState.wideExclusiveState = excl
+            if let streamType, let old = deviceState.wideStreamType, streamType != old { deviceState.wideStreamReload += 1 }
             deviceState.wideStreamType = streamType
             deviceState.wideResolution = res
             if let t = temp { deviceState.wideTemperature = t }
         } else {
             deviceState.teleExclusiveState = excl
+            if let streamType, let old = deviceState.teleStreamType, streamType != old { deviceState.teleStreamReload += 1 }
             deviceState.teleStreamType = streamType
             deviceState.teleResolution = res
             deviceState.teleHFov = d[3]
@@ -188,7 +190,19 @@ final class MessageRouter {
             deviceState.exposureElapsed = d[3]
 
         case .notifyStreamType:
-            break   // bekannt, aber nicht ausgewertet
+            // StreamType { int32 stream_type=1; int32 cam_id=2 } — das Gerät meldet
+            // einen Stream-Wechsel (z. B. nach Moduswechsel). Betroffene Kamera
+            // (cam_id 0=Tele, 1=Wide) neu verbinden lassen, aber nur bei echter
+            // Änderung (sonst Reconnect-Thrash bei wiederholten Notifies).
+            let streamType = f[1].map { Int(Int32(truncatingIfNeeded: $0)) }
+            let camId = f[2].map { Int(Int32(truncatingIfNeeded: $0)) } ?? 0
+            if camId == 1 {
+                if let streamType, let old = deviceState.wideStreamType, streamType != old { deviceState.wideStreamReload += 1 }
+                deviceState.wideStreamType = streamType
+            } else {
+                if let streamType, let old = deviceState.teleStreamType, streamType != old { deviceState.teleStreamReload += 1 }
+                deviceState.teleStreamType = streamType
+            }
 
         // --- Fokus / Autofokus ---
         case .notifyFocus:

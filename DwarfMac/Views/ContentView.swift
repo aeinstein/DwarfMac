@@ -8,6 +8,7 @@ struct ContentView: View {
     @AppStorage("deviceIP")    private var deviceIP    = DwarfEndpoint.defaultIP
     @AppStorage("observerLat") private var observerLat = 0.0
     @AppStorage("observerLon") private var observerLon = 0.0
+    @AppStorage("observingMode") private var observingModeRaw = ObservingMode.allgemein.rawValue
     private var router: MessageRouter { MessageRouter(deviceState: deviceState) }
 
     @State private var showGoTo = false
@@ -39,6 +40,9 @@ struct ContentView: View {
             }
             .onChange(of: conn.state) { _, newState in
                 guard newState == .connected else { return }
+                // Guard gegen Spurious-Moduswechsel beim Menü-Öffnen seeden, damit der
+                // erste Menü-Aufruf nach Connect nichts (Re-)Sendet.
+                deviceState.lastSentObservingMode = observingModeRaw
                 Task {
                     try? await conn.send(DwarfCommands.setTime())
                     try? await conn.send(DwarfCommands.setTimezone())
@@ -50,6 +54,11 @@ struct ContentView: View {
                     }
                     try? await conn.send(DwarfCommands.getDeviceStateInfo())
                     try? await conn.send(DwarfCommands.getStackingList())
+                    // Kamera-/Stream-Betrieb aufsetzen (enterCamera + Preview-Quality
+                    // für beide Kameras) — sonst liefert ch1 (Weitwinkel) keine Frames.
+                    for packet in DwarfCommands.startCameraStreams() {
+                        try? await conn.send(packet)
+                    }
                 }
             }
             .sheet(isPresented: $showGoTo) {
@@ -80,7 +89,7 @@ struct ContentView: View {
 
             ScrollView {
                 VStack(spacing: 20) {
-                    CameraPiPView(ip: conn.host, active: conn.state == .connected)
+                    CameraPiPView(ip: conn.host, active: conn.state == .connected, state: deviceState)
                         // Telemetrie links oben halbtransparent über das Video legen.
                         .overlay(alignment: .topLeading) {
                             StatusBar(state: deviceState)

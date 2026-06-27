@@ -41,14 +41,30 @@ struct DwarfMacApp: App {
         .commands {
             // Selten/gefährliche Aktionen in der Menüleiste verstecken.
             CommandMenu("Gerät") {
-                Picker("Modus", selection: $observingModeRaw) {
+                // ACHTUNG: KEIN `Picker` im CommandMenu! Ein `Picker` setzt beim
+                // Menü-Öffnen seine Selection auf den ersten Wert (0) zurück und feuert
+                // ein Spurious-`onChange` — das löste einen ungewollten Moduswechsel aus
+                // und ließ den Stream einfrieren (verifiziert 2026-06-27). Buttons nicht.
+                Menu("Modus") {
                     ForEach(ObservingMode.allCases) { m in
-                        Text(m.label).tag(m.rawValue)
+                        Button { selectObservingMode(m) } label: {
+                            if observingModeRaw == m.rawValue {
+                                Label(m.label, systemImage: "checkmark")
+                            } else {
+                                Text(m.label)
+                            }
+                        }
                     }
                 }
-                Picker("Aufnahme-Typ", selection: $captureTypeRaw) {
+                Menu("Aufnahme-Typ") {
                     ForEach(CaptureType.allCases) { t in
-                        Text(t.label).tag(t.rawValue)
+                        Button { captureTypeRaw = t.rawValue } label: {
+                            if captureTypeRaw == t.rawValue {
+                                Label(t.label, systemImage: "checkmark")
+                            } else {
+                                Text(t.label)
+                            }
+                        }
                     }
                 }
                 Divider()
@@ -76,12 +92,34 @@ struct DwarfMacApp: App {
         }
     }
 
+    /// Beobachtungsmodus per Menü-Button wählen (explizite Nutzeraktion). Setzt den
+    /// gespeicherten Modus und sendet die Wechsel-Transaktion nur bei echtem Wechsel.
+    private func selectObservingMode(_ mode: ObservingMode) {
+        observingModeRaw = mode.rawValue
+        guard isConnected, mode.rawValue != deviceState.lastSentObservingMode else { return }
+        deviceState.lastSentObservingMode = mode.rawValue
+        send(DwarfCommands.observingMode(mode))
+    }
+
     private func send(_ packet: Data) {
         Task {
             do {
                 try await conn.send(packet)
             } catch {
                 Log.line("[DwarfMacApp] Senden fehlgeschlagen: \(error)")
+            }
+        }
+    }
+
+    /// Mehrere Pakete der Reihe nach senden (z. B. die Moduswechsel-Transaktion).
+    private func send(_ packets: [Data]) {
+        Task {
+            for packet in packets {
+                do {
+                    try await conn.send(packet)
+                } catch {
+                    Log.line("[DwarfMacApp] Senden fehlgeschlagen: \(error)")
+                }
             }
         }
     }

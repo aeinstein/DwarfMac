@@ -39,6 +39,11 @@ final class DeviceState {
 
     // MARK: Kameramodus
     var shootingModeId: Int?         // aktueller Shooting-Mode (notifySwitchShootingMode)
+    /// Zuletzt ans Gerät gesendeter Beobachtungsmodus (rawValue). Liegt hier in der
+    /// stabilen @Observable-Referenz statt in @State der App, weil der `Picker` im
+    /// CommandMenu beim Öffnen ein Spurious-`onChange` auslöst und ein @State-Guard
+    /// dort nicht zuverlässig hält.
+    var lastSentObservingMode: Int?
 
     // MARK: Geräte-Zustand (aus GET_DEVICE_STATE_INFO, cmd=16405)
     var teleStreamType: Int?         // aktueller Stream-Typ der Telekamera
@@ -50,6 +55,14 @@ final class DeviceState {
     var wideTemperature: Int?        // CMOS-Temp Weitwinkel (°C)
     var teleExclusiveState: Int?     // 0=verfügbar, 1=exklusiv belegt (anderer Client)
     var wideExclusiveState: Int?
+
+    // Reconnect-Token für die RTSP-Player: wird hochgezählt, wenn das Gerät einen
+    // Stream-Wechsel meldet (notifyStreamType 15234 / geänderter Stream-Typ). Ein
+    // Moduswechsel (Allgemein↔Astro) stellt den Geräte-Stream um; ohne erneutes
+    // DESCRIBE/SETUP/PLAY bleibt der alte Stream „hängen". Die `RTSPPlayerView`
+    // beobachtet den Token und verbindet bei Änderung neu.
+    var teleStreamReload = 0
+    var wideStreamReload = 0
 
     // MARK: Kamera-Parameter (synchronisiert vom Gerät via notifyGeneralIntParam, cmd=15264)
     // Werden beim Empfang in die UI-Schieberegler gespiegelt (kein Feedback-Loop, da

@@ -18,7 +18,11 @@ enum CaptureSession {
         case .video:
             return [camera == .tele ? DwarfCommands.teleStartRecord() : DwarfCommands.wideStartRecord()]
         case .burst:
-            return [camera == .tele ? DwarfCommands.teleBurst(count: Int32(count))
+            // Serienfoto wird vom Gerät mit code:-1 PARSE_PROTOBUF_ERROR abgelehnt,
+            // wenn nicht vorher die BURST-Technik gesetzt ist (dwarflab-sdk, live
+            // verifiziert; protocol.md §18a). Daher zwingend voranstellen.
+            return [DwarfCommands.shootingTech(for: .burst),
+                    camera == .tele ? DwarfCommands.teleBurst(count: Int32(count))
                                     : DwarfCommands.wideBurst(count: Int32(count))]
         case .timelapse:
             return [camera == .tele

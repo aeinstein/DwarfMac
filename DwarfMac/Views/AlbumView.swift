@@ -296,7 +296,7 @@ struct AlbumItemSheet: View {
     private func download() async {
         guard let fileURL = AlbumService.url(host: host, devicePath: item.filePath) else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = item.fileName
+        panel.nameFieldStringValue = item.suggestedFileName
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         downloading = true
         downloadError = nil

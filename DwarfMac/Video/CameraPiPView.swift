@@ -8,11 +8,18 @@ import SwiftUI
 struct CameraPiPView: View {
     let ip: String
     let active: Bool
+    let state: DeviceState
 
     // Welche Kamera groß läuft, teilt sich den @AppStorage-Key mit der Aufnahme:
     // so nimmt die Aufnahme/​der Record-Button immer die im Hauptfenster gezeigte Kamera.
     @AppStorage("captureCamera") private var captureCameraRaw = CameraTarget.tele.rawValue
-    private var teleIsMain: Bool { captureCameraRaw == CameraTarget.tele.rawValue }
+    @AppStorage("observingMode") private var observingModeRaw = ObservingMode.allgemein.rawValue
+
+    private var mode: ObservingMode { ObservingMode(rawValue: observingModeRaw) ?? .allgemein }
+    /// In reinen Weitwinkel-Modi (Milchstraße/Sternspuren) ist Tele aus.
+    private var teleActive: Bool { mode.teleActive }
+    /// Tele nur dann groß, wenn es auch aktiv ist; sonst läuft Weitwinkel groß.
+    private var teleIsMain: Bool { teleActive && captureCameraRaw == CameraTarget.tele.rawValue }
 
     private var teleURL: URL { DwarfEndpoint.telephotoStream(ip: ip) }
     private var wideURL: URL { DwarfEndpoint.wideangleStream(ip: ip) }
@@ -30,13 +37,17 @@ struct CameraPiPView: View {
 
             ZStack {
                 camera(title: "Teleobjektiv", url: teleURL, isMain: teleIsMain,
+                       cameraActive: active && teleActive, hidden: !teleActive,
+                       reloadToken: state.teleStreamReload,
                        full: (w, h), pip: (pipW, pipH),
                        center: teleIsMain ? mainCenter : pipCenter)
 
                 camera(title: "Weitwinkel", url: wideURL, isMain: !teleIsMain,
+                       cameraActive: active, hidden: false,
+                       reloadToken: state.wideStreamReload,
                        full: (w, h), pip: (pipW, pipH),
                        center: teleIsMain ? pipCenter : mainCenter,
-                       showFovRect: true)
+                       showFovRect: teleActive)
             }
             .animation(.easeInOut(duration: 0.25), value: teleIsMain)
         }
@@ -47,16 +58,23 @@ struct CameraPiPView: View {
         title: String,
         url: URL,
         isMain: Bool,
+        cameraActive: Bool,
+        hidden: Bool,
+        reloadToken: Int,
         full: (CGFloat, CGFloat),
         pip: (CGFloat, CGFloat),
         center: CGPoint,
         showFovRect: Bool = false
     ) -> some View {
-        RTSPPlayerView(title: title, url: active ? url : nil, compact: !isMain)
+        // `hidden` = Kamera ist in diesem Modus abgeschaltet (z. B. Tele in
+        // Milchstraße/Sternspuren). View-Identität bleibt erhalten (kein if/else),
+        // nur url=nil (Player stoppt) + ausgeblendet — so reißt der andere Stream
+        // beim Moduswechsel nicht ab.
+        RTSPPlayerView(title: title, url: cameraActive ? url : nil, compact: !isMain, reloadToken: reloadToken)
             .frame(width: isMain ? full.0 : pip.0,
                    height: isMain ? full.1 : pip.1)
             .overlay {
-                if !isMain {
+                if !isMain && !hidden {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(.white.opacity(0.7), lineWidth: 1)
                 }
@@ -65,6 +83,8 @@ struct CameraPiPView: View {
             .shadow(radius: isMain ? 0 : 4)
             .position(center)
             .zIndex(isMain ? 0 : 1)
+            .opacity(hidden ? 0 : 1)
+            .allowsHitTesting(!hidden)
             // Tippen auf das PiP-Inset macht diese Kamera zum Hauptbild.
             .onTapGesture {
                 if !isMain {
