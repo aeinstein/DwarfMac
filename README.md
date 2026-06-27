@@ -21,14 +21,15 @@ WLAN. Die App verbindet sich per WebSocket mit dem Gerät und zeigt beide Kamera
 - **Tippen auf das kleine Bild** wechselt, welche Kamera groß angezeigt wird — die
   Videostreams bleiben dabei verbunden (kein Neuaufbau).
 - **Tele-FoV-Overlay**: ein grünes Rechteck auf dem Weitwinkel-Stream markiert den
-  Bildausschnitt der Telekamera. Per Drag verschiebbar, Größe und Sichtbarkeit über ein
-  Kalibrierungs-Popover einstellbar; alle Werte werden persistent gespeichert.
+  Bildausschnitt der Telekamera (Position und Größe per Messung kalibriert und hardcodiert).
 - **Aufnahme-Status-Leiste** (oben mittig über dem Video): zeigt laufende Aufnahme,
   Belichtungsfortschritt und Geräte-Fehlermeldungen aus den Notify-Paketen.
 
 ### Steuerung
 - **Steuerkreuz** (links unten halbtransparent über dem Video): Bewegung des Teleskops in
   alle vier Richtungen per Drücken-und-Halten, Stopp beim Loslassen.
+- **Cursor-Tasten**: steuern das Teleskop identisch zum D-Pad (gleiche Rampen-Logik,
+  funktioniert ohne Fokus auf einer bestimmten Schaltfläche).
 - **Gamepad-Steuerung** (USB/Bluetooth): der linke Analogstick steuert den Joystick-Befehl;
   D-Pad als Fallback. Deadzone und Maximalgeschwindigkeit sind in den Einstellungen konfigurierbar.
 - **GoTo** (Knopf in der Verbindungsleiste): Astro-Objekte nach Name oder Katalognummer suchen
@@ -55,9 +56,31 @@ WLAN. Die App verbindet sich per WebSocket mit dem Gerät und zeigt beide Kamera
 Alle Parameter werden **sofort beim Ändern** an das Teleskop gesendet und zwischen
 App-Starts gespeichert.
 
+### Teleskop-Archiv
+- **Archiv-Schaltfläche** (neben der Kamera-Kontrollleiste, nur wenn verbunden): öffnet das
+  Teleskop-Archiv.
+- **Thumbnail-Raster** mit Filter nach Medientyp (Alle / Fotos / Videos / Serienfoto /
+  Astro / Zeitraffer) und automatischem Nachladen beim Scrollen.
+- **Detailansicht**: Vorschau, Dateiinfos (Größe, Datum, Kamera), Herunterladen via
+  Speichern-Dialog, Löschen direkt vom Gerät.
+- Zugriff über HTTP-API (Port 8082), Dateiauslieferung über Port 80 (nginx auf dem Gerät).
+
+### BLE-Erstkonfiguration
+- **BLE-Einrichtung** (in Einstellungen, Schaltfläche „BLE-Einrichtung…"): scannt nach
+  Dwarf-Geräten per Bluetooth, überträgt WLAN-Zugangsdaten (SSID + Passwort) ans Teleskop
+  und erkennt die zugewiesene IP automatisch per UDP-Broadcast.
+- Geführter 4-Schritt-Flow: Gerät scannen → WLAN wählen → Konfiguration senden →
+  IP übernehmen.
+
+### RGB & Power
+- **LED-Ring** ein-/ausschalten über das App-Menü.
+- **Akkuanzeige** am Gerät ein-/ausschalten über das App-Menü.
+- **Neustart** und **Ausschalten** ebenfalls im App-Menü.
+
 ### Einstellungen (⌘,)
 - **Verbindung**: Geräte-IP manuell eingeben oder per UDP-Broadcast automatisch suchen.
-- **Beobachter-Standort**: Breiten-/Längengrad für GoTo und Kalibierung (GPS hat Vorrang).
+- **BLE-Einrichtung**: Teleskop per Bluetooth erstmalig mit WLAN verbinden.
+- **Beobachter-Standort**: Breiten-/Längengrad für GoTo und Kalibrierung (GPS hat Vorrang).
 - **Gamepad**: Deadzone (Standard 15 %) und Maximalgeschwindigkeit (Standard 50 %).
 - **Zeitzone**: zeigt die Systemzeitzone — wird beim Verbinden automatisch übertragen.
 
@@ -89,5 +112,6 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 SwiftUI · MVVM mit `@Observable` · WebSocket (`URLSessionWebSocketTask`) · hand-implementiertes
 Protobuf für das Dwarf-Protokoll · **VLCKit** für die RTSP-Wiedergabe ·
 **GameController.framework** für Gamepad · **CoreLocation** für GPS ·
+**CoreBluetooth** für BLE-Erstkonfiguration ·
 **SQLite3** für die Astro-Objekt-Datenbank (GoTo). Entwicklerdetails zur Architektur und
 zum Protokoll stehen in [`CLAUDE.md`](CLAUDE.md).
