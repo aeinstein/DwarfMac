@@ -15,6 +15,10 @@ Package.resolved
 # VLCKit symlink (created by run.sh at runtime)
 *.framework
 
+# Build artifacts (created by run.sh / makedmg.sh)
+*.app/
+*.dmg
+
 # Logs
 *.log
 
