@@ -57,7 +57,7 @@ nicht den protocol.proto-Wert. Wegen eines zusätzlichen `MODULE_FACTORY_TEST`
 | `cameraWide` | 2 | 12000–12035 |
 | `astro` | 3 | 11000–11012 |
 | `system` | 4 | 13000–13505 |
-| `rgbPower` | 5 | 13502, 13505 |
+| `rgbPower` | 5 | 13500–13505 |
 | `motor` | 6 | 14000–14008 |
 | `focus` | 8 | 15000–15005 |
 | `notify` | 9 | 15200–15295 |
@@ -334,7 +334,135 @@ ReqGotoSolarSystem {
 
 ---
 
-## 14. Geräteerkennung (UDP-Broadcast)
+## 14. RGB & Power (LED-Ring, Akkuanzeige)
+
+Alle Befehle nutzen Modul 5 (`rgbPower`) mit **leerem Payload**.
+
+| Cmd | Funktion |
+|---|---|
+| 13500 | LED-Ring einschalten |
+| 13501 | LED-Ring ausschalten |
+| 13502 | Gerät ausschalten |
+| 13503 | Akkuanzeige am Gerät einschalten |
+| 13504 | Akkuanzeige am Gerät ausschalten |
+| 13505 | Gerät neu starten |
+
+Notify `15221` (`CMD_NOTIFY_RGB_STATE`) meldet den aktuellen LED-Ring-Status zurück.
+
+---
+
+## 15. Teleskop-Archiv (HTTP-API Port 8082)
+
+Das Gerät betreibt zwei HTTP-Server:
+
+| Port | Software | Funktion |
+|---|---|---|
+| 80 | nginx | Dateiauslieferung: Fotos, Videos, Thumbnails |
+| 8082 | libhv | REST-API für Album-Verwaltung |
+
+### Endpunkte (POST, JSON)
+
+```
+POST http://<IP>:8082/album/list/mediaCounts
+Body: {}
+→ [{ "mediaType": 0, "count": 50 }, …]
+
+POST http://<IP>:8082/album/list/mediaInfos
+Body: { "mediaType": 0, "pageIndex": 0, "pageSize": 50 }
+→ [{ "fileName": "…", "filePath": "/DWARF_mini/Normal_Photos/…",
+     "thumbnailPath": "/DWARF_mini/Normal_Photos/Thumbnail/…",
+     "fileSize": 123456, "mediaType": 1, "modificationTime": 1700000000,
+     "camId": 0 }]
+
+POST http://<IP>:8082/album/delete
+Body: { "datas": [{ "mediaType": 1, "filePath": "…", "fileName": "…", "subType": 0 }] }
+```
+
+### mediaType-Werte
+
+| Wert | Bedeutung |
+|---|---|
+| 0 | Alle |
+| 1 | Einzelfoto |
+| 2 | Video |
+| 3 | Serienfoto |
+| 4 | Astro (Live-Stacking) |
+| 5 | Zeitraffer |
+
+### Datei-Download
+
+Die `filePath`-Werte aus der API (z. B. `/DWARF_mini/Normal_Photos/…`) werden
+direkt über **Port 80** (nginx) ausgeliefert:
+
+```
+http://<IP>/DWARF_mini/Normal_Photos/DWARF_mini_WIDE_….jpg   → 200 OK
+http://<IP>:8082/DWARF_mini/…                                → 404
+```
+
+Alternativ: anonymes FTP (Port 21, vsFTPd 3.0.5) ohne `/DWARF_mini/`-Präfix:
+```
+ftp://<IP>/Normal_Photos/…
+ftp://<IP>/Astronomy/…
+ftp://<IP>/Videos/…
+```
+
+---
+
+## 16. BLE-Erstkonfiguration
+
+Das Teleskop kann per Bluetooth erstmalig mit einem WLAN verbunden werden.
+
+### BLE-Identifikation
+
+| Eigenschaft | Wert |
+|---|---|
+| Gerätename-Präfix | `"DWARF"` |
+| Service-UUID | `0000DAF5-0000-1000-8000-00805F9B34FB` (geräteabhängig, nicht FFE0!) |
+| Characteristic UUID | `00009999-0000-1000-8000-00805F9B34FB` (Write+Notify, props=58) |
+
+### Frame-Format
+
+```
+[0xAA, 0x01, cmd, 0x00, 0x01, 0x00, 0x00, len_hi, len_lo, <proto3-payload>, crc16_hi, crc16_lo, 0x0D]
+```
+
+- `cmd` = BLE-Befehlsbyte (siehe unten)
+- `len_hi/lo` = Payload-Länge Big-Endian
+- CRC16 Modbus RTU: Polynom `0xA001`, Init `0xFFFF`, über alle Bytes vor dem CRC
+
+### BLE-Befehle
+
+| cmd | Request | Response |
+|---|---|---|
+| 1 | `ReqGetconfig { cmd=1, ble_psd=2 }` | `ResGetconfig { cmd=1, code=2, …, ip=10 }` |
+| 3 | `ReqSta { cmd=1, auto_start=2, ble_psd=3, ssid=4, psd=5 }` | `ResSta { cmd=1, code=2, ssid=3, psd=4, ip=5 }` |
+| 5 | `ReqResetWifi {}` | — |
+| 6 | `ReqGetwifilist { cmd=1 }` | `ResWifilist { cmd=1, code=2, ssid[]=4 }` |
+
+### Fehlercode-Interpretation (ResSta)
+
+| code | Bedeutung |
+|---|---|
+| 0 | Erfolgreich, IP in Feld 5 |
+| -20 | Konfiguration angenommen, Gerät verbindet sich noch — Feld 3 (SSID) wird zurückgespiegelt; **kein Fehler** |
+| -1, -3, -4, -8, -9, -10 | Echter Fehler (falsches Passwort, Timeout usw.) |
+
+### Standard-BLE-Passwort
+
+`"DWARF_12345678"` (in `bluetooth.js` der Referenz-API dokumentiert)
+
+> **Wichtig:** `scanForPeripherals(withServices:)` mit der erwarteten Service-UUID
+> filtert zu aggressiv — der DWARF mini antwortet nicht darauf. Immer `withServices: nil`
+> scannen und nach Namens-Präfix `"DWARF"` filtern. Ebenso `discoverServices(nil)` statt
+> mit einer festen UUID, da der Service-UUID geräteabhängig ist.
+
+> **Wichtig:** Receive-Buffer als `[UInt8]`-Array führen, nicht als `Data`.
+> `Data.removeFirst(n)` verschiebt `startIndex`, wodurch `receiveBuffer[0]` außerhalb der
+> Bounds liegt und die App abstürzt.
+
+---
+
+## 17. Geräteerkennung (UDP-Broadcast)
 
 ```
 Phone sendet UDP-Broadcast → 255.255.255.255:9900 (15-Byte Proto3):
@@ -349,7 +477,7 @@ Alle 1 s wiederholen, bis eine Antwort eingeht; dann Listener schließen.
 
 ---
 
-## 15. Notify-Codes (eingehend)
+## 18. Notify-Codes (eingehend)
 
 Relevante Notify-Pakete, die die App auswertet:
 
@@ -379,7 +507,7 @@ Relevante Notify-Pakete, die die App auswertet:
 
 ---
 
-## 16. Bekannte Fallstricke
+## 19. Bekannte Fallstricke
 
 **Blaues Bild nach WB-Befehl:** Die dedizierten WB-Cmds (10025–10029) werden vom
 DWARF mini nur scheinbar übernommen — bei Werten ≠ Neutral setzt das Gerät WB intern
@@ -398,3 +526,12 @@ Astro-Katalogen üblich — kein Umrechnen auf Grad.
 **Modul-Ordinal ≠ Proto-Wert:** taskCenter = Ordinal 14 (nicht 16),
 param = Ordinal 15 — durch ein zusätzliches `MODULE_FACTORY_TEST` (Ordinal 12)
 verschoben.
+
+**Album-API auf Port 8082, Dateien auf Port 80:** Die API-Endpunkte
+(`/album/list/…`, `/album/delete`) laufen auf Port 8082 (libhv). Die tatsächlichen
+Dateipfade aus der API (`/DWARF_mini/…`) werden über Port 80 (nginx) ausgeliefert —
+Port 8082 gibt für Dateipfade 404 zurück.
+
+**BLE Service-UUID ist geräteabhängig:** Nicht `FFE0` wie in der Dokumentation
+erwartet, sondern `DAF5` beim DWARF mini. `discoverServices(nil)` verwenden und den
+ersten Nicht-Standard-Service (nicht `1800`/`1801`) nehmen.
