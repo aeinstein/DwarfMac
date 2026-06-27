@@ -11,6 +11,7 @@ struct ContentView: View {
     private var router: MessageRouter { MessageRouter(deviceState: deviceState) }
 
     @State private var showGoTo = false
+    @State private var showAlbum = false
     private let locationManager = LocationManager()
     private let database = AstroDatabase()
 
@@ -55,12 +56,25 @@ struct ContentView: View {
                 GoToView(conn: conn, state: deviceState,
                          location: locationManager, database: database)
             }
+            .sheet(isPresented: $showAlbum) {
+                NavigationStack {
+                    AlbumView(host: conn.host)
+                }
+                .frame(minWidth: 1000, idealWidth: 1200, minHeight: 650, idealHeight: 800)
+            }
 
             Divider()
 
             if conn.state == .connected {
-                // Dort, wo früher die Telemetrie-Icons saßen: Kamera-/Stream-Betrieb.
-                CameraControlBar(conn: conn, state: deviceState)
+                HStack {
+                    CameraControlBar(conn: conn, state: deviceState)
+                    Spacer()
+                    Button { showAlbum = true } label: {
+                        Label("Archiv", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.trailing, 8)
+                }
                 Divider()
             }
 
