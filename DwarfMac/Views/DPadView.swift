@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Steuerkreuz (Joystick-D-Pad). Eigenständige View, damit es sowohl im
 /// ControlPanel als auch als Overlay über dem großen Video genutzt werden kann.
@@ -14,6 +15,8 @@ struct DPadView: View {
 
     @State private var pressedDir: Direction?
     @State private var rampTask: Task<Void, Never>?
+    @State private var keyMonitorDown: Any?
+    @State private var keyMonitorUp: Any?
 
     enum Direction { case up, down, left, right }
 
@@ -23,6 +26,17 @@ struct DPadView: View {
         case .up:    90
         case .left:  180
         case .down:  270
+        }
+    }
+
+    // Pfeiltasten-Keycodes (Carbon/NSEvent, hardware-unabhängig).
+    private func direction(for keyCode: UInt16) -> Direction? {
+        switch keyCode {
+        case 126: .up
+        case 125: .down
+        case 123: .left
+        case 124: .right
+        default:  nil
         }
     }
 
@@ -40,6 +54,34 @@ struct DPadView: View {
             dpadButton("▼", .down)
         }
         .font(.title2)
+        .onAppear { installKeyMonitor() }
+        .onDisappear { removeKeyMonitor() }
+    }
+
+    // MARK: - Tastatur-Monitor
+
+    private func installKeyMonitor() {
+        keyMonitorDown = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard let dir = direction(for: event.keyCode) else { return event }
+            if !event.isARepeat && pressedDir != dir {
+                pressedDir = dir
+                move(dir)
+            }
+            return nil   // Pfeiltaste immer verbrauchen (auch Repeat), kein System-Beep
+        }
+        keyMonitorUp = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { event in
+            guard direction(for: event.keyCode) != nil else { return event }
+            pressedDir = nil
+            stop()
+            return nil
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitorDown { NSEvent.removeMonitor(m) }
+        if let m = keyMonitorUp   { NSEvent.removeMonitor(m) }
+        keyMonitorDown = nil
+        keyMonitorUp   = nil
     }
 
     private func dpadButton(_ label: String, _ dir: Direction) -> some View {
