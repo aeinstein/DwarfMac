@@ -177,9 +177,16 @@ enum DwarfCmd: UInt32 {
     case astroStartTrackSpecialTarget = 11011 // (Proto TBD)
     case astroStopTrackSpecialTarget = 11012  // (leer)
 
-    // RGB & Power
+    // RGB & Power (MODULE_RGB_POWER)
+    case rgbOpen = 13500             // LED-Ring einschalten
+    case rgbClose = 13501            // LED-Ring ausschalten
     case powerDown = 13502
+    case powerIndicatorOn = 13503    // Akkuanzeige einschalten
+    case powerIndicatorOff = 13504   // Akkuanzeige ausschalten
     case reboot = 13505
+
+    // Notify: RGB-Ring-Status
+    case notifyRgbState = 15221      // CMD_NOTIFY_RGB_STATE
 
     // Task-Center (Global Task Manager) — neuere Geräte (DWARF mini/3) starten
     // hierüber den Kamera-/Stream-Betrieb. openCamera allein genügt NICHT.

@@ -474,4 +474,20 @@ enum DwarfCommands {
     static func powerDown() -> Data {
         WsPacket(module: .rgbPower, cmd: .powerDown).encode()
     }
+
+    static func ledRingOn() -> Data {
+        WsPacket(module: .rgbPower, cmd: .rgbOpen).encode()
+    }
+
+    static func ledRingOff() -> Data {
+        WsPacket(module: .rgbPower, cmd: .rgbClose).encode()
+    }
+
+    static func batteryIndicatorOn() -> Data {
+        WsPacket(module: .rgbPower, cmd: .powerIndicatorOn).encode()
+    }
+
+    static func batteryIndicatorOff() -> Data {
+        WsPacket(module: .rgbPower, cmd: .powerIndicatorOff).encode()
+    }
 }

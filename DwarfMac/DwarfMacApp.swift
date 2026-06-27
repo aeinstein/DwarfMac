@@ -54,6 +54,16 @@ struct DwarfMacApp: App {
                 Divider()
                 Toggle("Expertenmodus", isOn: $expertMode)
                 Divider()
+                Button("LED-Ring ein") { send(DwarfCommands.ledRingOn()) }
+                    .disabled(!isConnected)
+                Button("LED-Ring aus") { send(DwarfCommands.ledRingOff()) }
+                    .disabled(!isConnected)
+                Divider()
+                Button("Akkuanzeige ein") { send(DwarfCommands.batteryIndicatorOn()) }
+                    .disabled(!isConnected)
+                Button("Akkuanzeige aus") { send(DwarfCommands.batteryIndicatorOff()) }
+                    .disabled(!isConnected)
+                Divider()
                 Button("Neustart") { send(DwarfCommands.reboot()) }
                     .disabled(!isConnected)
                 Button("Ausschalten") { send(DwarfCommands.powerDown()) }
