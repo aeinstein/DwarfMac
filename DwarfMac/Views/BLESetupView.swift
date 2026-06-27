@@ -232,45 +232,17 @@ struct BLESetupView: View {
             }
             .padding(.horizontal)
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Neustart erforderlich", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .font(.headline)
-                    Text("Der WebSocket-Server startet erst nach einem Neustart auf dem neuen WLAN-Interface. Starte das Teleskop jetzt neu.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal)
-
             Spacer()
 
-            VStack(spacing: 12) {
-                Button {
-                    deviceIP = resultIP
-                    ble.disconnect()
-                    dismiss()
-                } label: {
-                    Label("IP übernehmen & schließen", systemImage: "checkmark")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button(role: .destructive) {
-                    deviceIP = resultIP
-                    ble.resetWifi()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        ble.disconnect()
-                        dismiss()
-                    }
-                } label: {
-                    Label("WiFi-Reset & schließen", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .help("Sendet Reset-Befehl an das Teleskop — danach Gerät manuell neustarten")
+            Button {
+                deviceIP = resultIP
+                ble.disconnect()
+                dismiss()
+            } label: {
+                Label("IP übernehmen & schließen", systemImage: "checkmark")
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
             .padding()
         }
     }
