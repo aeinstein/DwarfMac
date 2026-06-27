@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Protokoll-Referenz
+
+Gesammelte Protokoll-Erkenntnisse (PCAP-Analysen, Praxistests, Fallstricke) stehen in
+[`protocol.md`](protocol.md). Vor dem Implementieren neuer Befehle oder dem Debuggen von
+Protokollproblemen dort nachschauen — insbesondere die Abschnitte zu Modul-Ordinalen,
+PARAM-Modul, Album-API-Ports und BLE-Fallstricken.
+
 ## Build & Run
 
 ```bash
