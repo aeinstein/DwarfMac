@@ -9,11 +9,13 @@ struct CameraControlBar: View {
     let state: DeviceState
 
     @AppStorage("captureType")        private var captureTypeRaw    = CaptureType.stacked.rawValue
+    @AppStorage("observingMode")      private var observingModeRaw  = ObservingMode.allgemein.rawValue
     @AppStorage("stackCount")         private var stackCount        = 10
     @AppStorage("timelapseInterval")  private var timelapseInterval = 5
     @AppStorage("timelapseCount")     private var timelapseCount    = 60
 
     private var capture: CaptureType { CaptureType(rawValue: captureTypeRaw) ?? .stacked }
+    private var mode: ObservingMode { ObservingMode(rawValue: observingModeRaw) ?? .allgemein }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -27,7 +29,7 @@ struct CameraControlBar: View {
             // — Aufnahme-Modus —
             Text("Aufnahme").font(.callout.weight(.medium))
             Picker("Modus", selection: $captureTypeRaw) {
-                ForEach(CaptureType.allCases) { t in
+                ForEach(mode.allowedCaptureTypes) { t in
                     Text(t.label).tag(t.rawValue)
                 }
             }

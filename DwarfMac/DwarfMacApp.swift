@@ -31,6 +31,7 @@ struct DwarfMacApp: App {
     @AppStorage("expertMode")    private var expertMode = false
 
     private var isConnected: Bool { conn.state == .connected }
+    private var currentMode: ObservingMode { ObservingMode(rawValue: observingModeRaw) ?? .allgemein }
 
     var body: some Scene {
         WindowGroup {
@@ -57,7 +58,7 @@ struct DwarfMacApp: App {
                     }
                 }
                 Menu("Aufnahme-Typ") {
-                    ForEach(CaptureType.allCases) { t in
+                    ForEach(currentMode.allowedCaptureTypes) { t in
                         Button { captureTypeRaw = t.rawValue } label: {
                             if captureTypeRaw == t.rawValue {
                                 Label(t.label, systemImage: "checkmark")
@@ -96,6 +97,8 @@ struct DwarfMacApp: App {
     /// gespeicherten Modus und sendet die Wechsel-Transaktion nur bei echtem Wechsel.
     private func selectObservingMode(_ mode: ObservingMode) {
         observingModeRaw = mode.rawValue
+        // Ungültige Aufnahme-Typ-Auswahl im neuen Modus auf einen gültigen Typ zurücksetzen.
+        captureTypeRaw = mode.validCaptureType(CaptureType(rawValue: captureTypeRaw) ?? .stacked).rawValue
         guard isConnected, mode.rawValue != deviceState.lastSentObservingMode else { return }
         deviceState.lastSentObservingMode = mode.rawValue
         send(DwarfCommands.observingMode(mode))

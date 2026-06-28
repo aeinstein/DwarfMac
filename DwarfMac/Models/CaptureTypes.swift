@@ -34,6 +34,21 @@ enum ObservingMode: Int, CaseIterable, Identifiable {
     /// Der Client darf ihn dann nicht anzuzeigen versuchen (sonst „nicht
     /// ansprechbar" + sinnlose Reconnects).
     var teleActive: Bool { !isAstroMode }
+
+    /// Aufnahme-Typen, die das Gerät in diesem Modus unterstützt.
+    var allowedCaptureTypes: [CaptureType] {
+        switch self {
+        case .allgemein, .solarSystem: CaptureType.allCases
+        case .deepSky:                 [.stacked]
+        case .milkyWay:                [.stacked, .timelapse]
+        case .starTrails:              [.photo]
+        }
+    }
+
+    /// Stellt sicher, dass `current` im Modus erlaubt ist; sonst den ersten erlaubten Typ.
+    func validCaptureType(_ current: CaptureType) -> CaptureType {
+        allowedCaptureTypes.contains(current) ? current : (allowedCaptureTypes.first ?? .stacked)
+    }
 }
 
 /// Aufnahme-Typ innerhalb des Modus „Allgemein".
