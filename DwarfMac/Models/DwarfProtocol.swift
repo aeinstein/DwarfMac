@@ -267,3 +267,17 @@ enum DwarfCmd: UInt32 {
     case notifyBodyStatus = 15262
     case notifyHostSlaveMode = 15223               // Host/Slave-Kontrollstatus
 }
+
+extension DwarfCmd {
+    /// Klartext-Name für einen rohen cmd-Code; "unbekannt" wenn nicht im Enum.
+    static func name(for cmdId: UInt32) -> String {
+        DwarfCmd(rawValue: cmdId).map { String(describing: $0) } ?? "unbekannt"
+    }
+}
+
+extension Module {
+    /// Klartext-Name für eine rohe Modul-ID; "unbekannt" wenn nicht im Enum.
+    static func name(for moduleId: UInt32) -> String {
+        Module(rawValue: moduleId).map { String(describing: $0) } ?? "unbekannt"
+    }
+}

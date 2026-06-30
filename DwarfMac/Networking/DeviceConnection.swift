@@ -65,7 +65,7 @@ final class DeviceConnection: NSObject {
     private static func log(_ direction: String, _ data: Data) {
         let hex = data.map { String(format: "%02x", $0) }.joined()
         if let p = WsPacket.decode(data) {
-            Log.line("[WS] \(direction) cmd=\(p.cmdId) module=\(p.moduleId) type=\(p.typeId) (\(data.count) B) data=\(p.data.map { String(format: "%02x", $0) }.joined()) | frame=\(hex)")
+            Log.line("[WS] \(direction) cmd=\(p.cmdId) \(DwarfCmd.name(for: p.cmdId)) module=\(p.moduleId) \(Module.name(for: p.moduleId)) type=\(p.typeId) (\(data.count) B) data=\(p.data.map { String(format: "%02x", $0) }.joined()) | frame=\(hex)")
         } else {
             Log.line("[WS] \(direction) \(data.count) B (kein WsPacket) frame=\(hex)")
         }
@@ -130,8 +130,9 @@ final class DeviceConnection: NSObject {
         Log.line("[WS] ✓ OPEN — WebSocket verbunden")
         startPing()
         // Direkt nach dem Verbinden Master-Kontrolle übernehmen (sonst ignoriert der
-        // mini Steuerbefehle), dann Geräte-Zustand + Kamera-Parameter abfragen.
+        // mini Steuerbefehle, protocol.md 4.3), dann Geräte-Zustand + Kamera-Parameter abfragen.
         Task {
+            try? await send(DwarfCommands.setMaster(true))
             try? await send(DwarfCommands.getDeviceStateInfo())
             try? await send(DwarfCommands.getTeleAllParams())
             try? await send(DwarfCommands.getTeleAllFeatureParams())
