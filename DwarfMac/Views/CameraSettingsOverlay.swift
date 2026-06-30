@@ -200,6 +200,31 @@ struct CameraSettingsPanel: View {
             guard camera == .wide, let v else { return }
             sharpness = Double(v); wideSharpness = Double(v)
         }
+        // Belichtung / Gain / IR-Cut (vom Gerät via 15264 gemeldet, paramId 1/2/13).
+        .onChange(of: state.teleExposure) { _, v in
+            guard camera == .tele, let v else { return }
+            let snapped = Int(CameraParams.snap(Int32(v), to: CameraParams.exposures(for: .tele)))
+            expIndex = snapped; teleExpIndex = snapped
+        }
+        .onChange(of: state.wideExposure) { _, v in
+            guard camera == .wide, let v else { return }
+            let snapped = Int(CameraParams.snap(Int32(v), to: CameraParams.exposures(for: .wide)))
+            expIndex = snapped; wideExpIndex = snapped
+        }
+        .onChange(of: state.teleGain) { _, v in
+            guard camera == .tele, let v else { return }
+            let snapped = Int(CameraParams.snap(Int32(v), to: CameraParams.gains(for: .tele)))
+            gainIndex = snapped; teleGainIndex = snapped
+        }
+        .onChange(of: state.wideGain) { _, v in
+            guard camera == .wide, let v else { return }
+            let snapped = Int(CameraParams.snap(Int32(v), to: CameraParams.gains(for: .wide)))
+            gainIndex = snapped; wideGainIndex = snapped
+        }
+        .onChange(of: state.teleIrCut) { _, v in
+            guard camera == .tele, let v else { return }
+            irCut = v
+        }
     }
 
     // MARK: Fokus
@@ -344,9 +369,10 @@ struct CameraSettingsPanel: View {
         let gains = CameraParams.gains(for: camera)
         if camera == .tele {
             expManual  = teleExpManual
-            expIndex   = Int(CameraParams.snap(Int32(teleExpIndex),  to: exps))
+            expIndex   = Int(CameraParams.snap(Int32(state.teleExposure ?? teleExpIndex), to: exps))
             gainManual = teleGainManual
-            gainIndex  = Int(CameraParams.snap(Int32(teleGainIndex), to: gains))
+            gainIndex  = Int(CameraParams.snap(Int32(state.teleGain ?? teleGainIndex), to: gains))
+            if let ir = state.teleIrCut { irCut = ir }
             wbMode     = teleWbMode
             wbIndex    = teleWbIndex
             brightness = state.teleBrightness.map(Double.init) ?? teleBrightness
@@ -356,9 +382,9 @@ struct CameraSettingsPanel: View {
             sharpness  = state.teleSharpness.map(Double.init)  ?? teleSharpness
         } else {
             expManual  = wideExpManual
-            expIndex   = Int(CameraParams.snap(Int32(wideExpIndex),  to: exps))
+            expIndex   = Int(CameraParams.snap(Int32(state.wideExposure ?? wideExpIndex), to: exps))
             gainManual = false          // Weitwinkel hat keinen Manuell-Modus
-            gainIndex  = Int(CameraParams.snap(Int32(wideGainIndex), to: gains))
+            gainIndex  = Int(CameraParams.snap(Int32(state.wideGain ?? wideGainIndex), to: gains))
             wbMode     = wideWbMode
             wbIndex    = wideWbIndex
             brightness = state.wideBrightness.map(Double.init) ?? wideBrightness

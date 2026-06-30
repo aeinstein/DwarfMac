@@ -295,26 +295,27 @@ final class MessageRouter {
         deviceState.setCapture(kind, active: state.isActive)
     }
 
-    /// Mappt compound param_id → DeviceState-Bildregler-Felder und inkrementiert paramGeneration.
-    /// Compound-ID-Schema (PCAP 2026-06-25): 0x0101_0000_0000_0000 | (camera << 44) | paramId
-    /// camera=0→Tele, camera=1→Weitwinkel. paramId: 4=Helligkeit, 5=Kontrast,
-    /// 6=Sättigung, 7=Farbton, 8=Schärfe.
-    private func applyGeneralIntParam(paramId: UInt64, value: Int32) {
-        let teleBase: UInt64 = 0x0101_0000_0000_0000
-        let wideBase: UInt64 = 0x0101_1000_0000_0000
+    /// Mappt compound param_id → DeviceState-Param-Felder und inkrementiert paramGeneration.
+    /// paramId: 1=Belichtung, 2=Gain, 4=Helligkeit, 5=Kontrast, 6=Sättigung,
+    /// 7=Farbton, 8=Schärfe, 13=IR-Cut (filterType).
+    private func applyGeneralIntParam(paramId compound: UInt64, value: Int32) {
+        // Compound-Layout (dwarflab-sdk utils/param-id.ts):
+        //   Bits 56–63 modeId · 48–55 sectionId · 44–47 cameraId · 0–15 paramId.
+        // Modus/Section bewusst ignorieren — sonst greift die Spiegelung nur in
+        // „Allgemein" (modeId 0x01) und nicht in DeepSky/Astro-Modi.
+        let isTele = ((compound >> 44) & 0xf) == 0      // 0=Tele, 1=Weitwinkel
+        let v = Int(value)
         var changed = true
-        switch paramId {
-        case teleBase | 4: deviceState.teleBrightness  = Int(value)
-        case teleBase | 5: deviceState.teleContrast    = Int(value)
-        case teleBase | 6: deviceState.teleSaturation  = Int(value)
-        case teleBase | 7: deviceState.teleHue         = Int(value)
-        case teleBase | 8: deviceState.teleSharpness   = Int(value)
-        case wideBase | 4: deviceState.wideBrightness  = Int(value)
-        case wideBase | 5: deviceState.wideContrast    = Int(value)
-        case wideBase | 6: deviceState.wideSaturation  = Int(value)
-        case wideBase | 7: deviceState.wideHue         = Int(value)
-        case wideBase | 8: deviceState.wideSharpness   = Int(value)
-        default:           changed = false
+        switch compound & 0xffff {
+        case 1:  if isTele { deviceState.teleExposure   = v } else { deviceState.wideExposure   = v }  // angenommen, am Gerät prüfen
+        case 2:  if isTele { deviceState.teleGain       = v } else { deviceState.wideGain       = v }  // angenommen, am Gerät prüfen
+        case 4:  if isTele { deviceState.teleBrightness = v } else { deviceState.wideBrightness = v }
+        case 5:  if isTele { deviceState.teleContrast   = v } else { deviceState.wideContrast   = v }
+        case 6:  if isTele { deviceState.teleSaturation = v } else { deviceState.wideSaturation = v }
+        case 7:  if isTele { deviceState.teleHue        = v } else { deviceState.wideHue        = v }
+        case 8:  if isTele { deviceState.teleSharpness  = v } else { deviceState.wideSharpness  = v }
+        case 13: if isTele { deviceState.teleIrCut      = v } else { deviceState.wideIrCut      = v }   // filterType
+        default: changed = false
         }
         if changed { deviceState.paramGeneration += 1 }
     }

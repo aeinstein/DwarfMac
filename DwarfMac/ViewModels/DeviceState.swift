@@ -77,6 +77,14 @@ final class DeviceState {
     var wideSaturation: Int?
     var wideHue: Int?
     var wideSharpness: Int?
+    // Belichtung/Gain/IR-Cut werden ebenfalls über notifyGeneralIntParam gemeldet
+    // (paramId 1=Belichtung, 2=Gain, 13=IR-Cut/filterType).
+    var teleExposure: Int?
+    var teleGain: Int?
+    var teleIrCut: Int?
+    var wideExposure: Int?
+    var wideGain: Int?
+    var wideIrCut: Int?
     /// Inkrementiert bei jedem eingehenden Param-Notify → löst UI-Sync aus.
     var paramGeneration: Int = 0
 
