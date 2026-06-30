@@ -1,8 +1,15 @@
 @preconcurrency import GameController
 import Foundation
+import IOKit.hid
 
-/// Liest USB/Bluetooth-Gamepad-Eingaben (Apple GameController.framework) und
-/// übersetzt den linken Analogstick in Dwarf-Joystick-Befehle.
+/// Liest USB/Bluetooth-Gamepad-Eingaben und übersetzt den linken Analogstick in
+/// Dwarf-Joystick-Befehle.
+///
+/// Zwei Eingabe-Backends:
+///  - **GameController.framework** (`GCController`) für MFi-/Xbox-/PlayStation- und
+///    moderne Standard-HID-Controller.
+///  - **IOKit HID** (`IOHIDManager`) als Fallback für generische USB-DirectInput-Gamepads
+///    (z. B. Thrustmaster FireStorm), die `GameController.framework` nicht erkennt.
 ///
 /// Polling-Ansatz (150 ms) statt rein event-reaktiv, damit die Sende-Rate mit
 /// DPadView übereinstimmt und kurze Deadzone-Unterschreitungen nicht zu Flackern führen.
@@ -30,6 +37,13 @@ final class GamepadController {
     private var wasActive  = false
     private var pollingTask: Task<Void, Never>?
 
+    /// True, wenn der aktive Controller über GameController.framework läuft. Dann
+    /// wird der HID-Pfad ignoriert (sonst doppelte/konkurrierende Eingaben).
+    private var usingGameController = false
+
+    // HID-Fallback (IOHIDManager): rohe Achsen/Buttons generischer USB-Gamepads.
+    @ObservationIgnored private var hidManager: IOHIDManager?
+
     // MARK: – Einstellungen (UserDefaults, geschrieben von SettingsView via @AppStorage)
 
     private var deadzone: Double {
@@ -48,6 +62,7 @@ final class GamepadController {
     func attach(conn: DeviceConnection) {
         self.conn = conn
         startObserving()
+        startHIDManager()
     }
 
     // MARK: – Controller-Erkennung
@@ -72,13 +87,15 @@ final class GamepadController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.isConnected = false
-                self?.controllerName = nil
-                self?.stickX = 0; self?.stickY = 0
-                self?.dpadX  = 0; self?.dpadY  = 0
-                self?.stopMovement()
-                self?.pollingTask?.cancel()
-                self?.pollingTask = nil
+                guard let self, self.usingGameController else { return }
+                self.usingGameController = false
+                self.isConnected = false
+                self.controllerName = nil
+                self.stickX = 0; self.stickY = 0
+                self.dpadX  = 0; self.dpadY  = 0
+                self.stopMovement()
+                self.pollingTask?.cancel()
+                self.pollingTask = nil
             }
         }
 
@@ -88,6 +105,7 @@ final class GamepadController {
 
     private func setup(_ controller: GCController) {
         isConnected  = true
+        usingGameController = true
         controllerName = controller.vendorName ?? "Gamepad"
 
         // Linker Analogstick → stickX/Y (Haupt-Eingang)
@@ -156,6 +174,99 @@ final class GamepadController {
         wasActive = false
         Task { [weak self] in
             try? await self?.conn?.send(DwarfCommands.joystickStop())
+        }
+    }
+
+    // MARK: – IOKit-HID-Fallback (generische USB-DirectInput-Gamepads)
+
+    /// Erstellt einen IOHIDManager, der auf Joystick-/Gamepad-Geräte (Generic Desktop
+    /// usage 0x04/0x05) lauscht. Generische USB-Gamepads (z. B. Thrustmaster FireStorm)
+    /// werden von GameController.framework nicht erkannt, von IOKit aber sehr wohl.
+    private func startHIDManager() {
+        let mgr = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        let matching: [[String: Any]] = [
+            [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop, kIOHIDDeviceUsageKey: kHIDUsage_GD_Joystick],
+            [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop, kIOHIDDeviceUsageKey: kHIDUsage_GD_GamePad],
+        ]
+        IOHIDManagerSetDeviceMatchingMultiple(mgr, matching as CFArray)
+
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDManagerRegisterDeviceMatchingCallback(mgr, { ctx, _, _, device in
+            guard let ctx else { return }
+            let me = Unmanaged<GamepadController>.fromOpaque(ctx).takeUnretainedValue()
+            MainActor.assumeIsolated { me.hidDeviceMatched(device) }
+        }, context)
+        IOHIDManagerRegisterDeviceRemovalCallback(mgr, { ctx, _, _, _ in
+            guard let ctx else { return }
+            let me = Unmanaged<GamepadController>.fromOpaque(ctx).takeUnretainedValue()
+            MainActor.assumeIsolated { me.hidDeviceRemoved() }
+        }, context)
+        IOHIDManagerRegisterInputValueCallback(mgr, { ctx, _, _, value in
+            guard let ctx else { return }
+            let me = Unmanaged<GamepadController>.fromOpaque(ctx).takeUnretainedValue()
+            MainActor.assumeIsolated { me.hidInput(value) }
+        }, context)
+
+        IOHIDManagerScheduleWithRunLoop(mgr, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerOpen(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
+        hidManager = mgr
+    }
+
+    private func hidDeviceMatched(_ device: IOHIDDevice) {
+        // GameController hat Vorrang; HID nur nutzen, wenn dort nichts läuft.
+        guard !usingGameController else { return }
+        isConnected = true
+        let name = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String
+        controllerName = name ?? "USB-Gamepad"
+        startPolling()
+    }
+
+    private func hidDeviceRemoved() {
+        guard !usingGameController else { return }
+        // Nur trennen, wenn kein weiteres HID-Gerät mehr da ist.
+        let devices = hidManager.flatMap { IOHIDManagerCopyDevices($0) as? Set<IOHIDDevice> } ?? []
+        guard devices.isEmpty else { return }
+        isConnected = false
+        controllerName = nil
+        stickX = 0; stickY = 0
+        dpadX  = 0; dpadY  = 0
+        stopMovement()
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    /// Verarbeitet einen einzelnen HID-Eingabewert: linker Stick (X/Y) auf −1…1
+    /// normiert; Hat-Switch/Buttons als digitales D-Pad (Fallback).
+    private func hidInput(_ value: IOHIDValue) {
+        guard !usingGameController else { return }
+        let element = IOHIDValueGetElement(value)
+        let usagePage = IOHIDElementGetUsagePage(element)
+        let usage = IOHIDElementGetUsage(element)
+        guard usagePage == kHIDPage_GenericDesktop else { return }
+
+        let raw = IOHIDValueGetIntegerValue(value)
+        let min = IOHIDElementGetLogicalMin(element)
+        let max = IOHIDElementGetLogicalMax(element)
+        guard max > min else { return }
+        // Auf −1…1 normieren.
+        let norm = (Double(raw - min) / Double(max - min)) * 2 - 1
+
+        switch Int(usage) {
+        case kHIDUsage_GD_X:  stickX = Float(norm)        // links/rechts
+        case kHIDUsage_GD_Y:  stickY = Float(-norm)       // HID: oben=min → invertieren (oben=+1, wie GC)
+        case kHIDUsage_GD_Hatswitch:
+            // Hat-Switch (8 Richtungen): nur grob auf D-Pad-Achsen abbilden.
+            let count = max - min + 1
+            if count >= 8, raw >= min, raw <= max {
+                let dir = Int(raw - min)               // 0=oben, im Uhrzeigersinn
+                let dx: [Float] = [0, 1, 1, 1, 0, -1, -1, -1]
+                let dy: [Float] = [1, 1, 0, -1, -1, -1, 0, 1]
+                dpadX = dx[dir % 8]; dpadY = dy[dir % 8]
+            } else {
+                dpadX = 0; dpadY = 0
+            }
+        default:
+            break
         }
     }
 }
